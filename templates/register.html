@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Register — Smart Attendance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Register New Face</h1>
+    <p class="page-desc">Enroll a new user into the facial recognition system</p>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="register-layout">
+
+            <!-- Camera Preview -->
+            <div class="register-camera">
+                <h3>Camera Preview</h3>
+                <p class="text-muted">Ensure your face is clearly visible and well-lit.</p>
+                <div class="register-feed-wrap">
+                    <img src="{{ url_for('video_feed') }}" id="register-feed" alt="Camera preview">
+                </div>
+            </div>
+
+            <!-- Registration Form -->
+            <div class="register-form">
+                <h3>User Details</h3>
+
+                <!-- Step 1: User Info -->
+                <div id="step-info">
+                    <div class="form-group">
+                        <label class="form-label" for="name">Full Name</label>
+                        <input type="text" id="name" name="name" class="form-input" required
+                               placeholder="e.g., John Doe" autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="user_id">User ID (Unique)</label>
+                        <input type="text" id="user_id" name="user_id" class="form-input" required
+                               placeholder="e.g., EMP001" autocomplete="off">
+                    </div>
+
+                    <div class="instructions">
+                        <h4>How it works</h4>
+                        <ol>
+                            <li>Fill in your name and ID above.</li>
+                            <li>Look directly at the camera.</li>
+                            <li>Click "Start Capture" below.</li>
+                            <li>Hold steady — vary your angle slightly between captures.</li>
+                        </ol>
+                    </div>
+
+                    <button type="button" class="btn btn-primary btn-block" id="start-capture-btn"
+                            onclick="startCaptureFlow()">
+                        Start Capture ({{ samples_needed }} samples)
+                    </button>
+                </div>
+
+                <!-- Step 2: Capture Progress -->
+                <div id="step-capture" style="display: none;">
+                    <div class="capture-progress">
+                        <h4>Capturing Samples</h4>
+                        <p class="text-muted" id="capture-instruction">Look at the camera and hold steady…</p>
+
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="capture-progress-bar" style="width: 0%;"></div>
+                        </div>
+
+                        <p class="capture-count">
+                            <span id="capture-current">0</span> / <span id="capture-total">{{ samples_needed }}</span> samples
+                        </p>
+
+                        <div class="sample-indicators" id="sample-indicators">
+                            {% for i in range(samples_needed) %}
+                            <div class="sample-dot" id="sample-dot-{{ i }}">
+                                <span class="dot-number">{{ i + 1 }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="capture-status" id="capture-status"></div>
+
+                        <button type="button" class="btn btn-outline btn-block" id="cancel-capture-btn"
+                                onclick="cancelCapture()" style="margin-top: 0.75rem;">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Result -->
+                <div id="step-result" style="display: none;">
+                    <div class="registration-result" id="result-container">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <button type="button" class="btn btn-primary btn-block" onclick="resetRegistration()"
+                            style="margin-top: 0.75rem;">
+                        Register Another User
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    var SAMPLES_NEEDED = {{ samples_needed }};
+    var sessionId = '';
+    var capturedCount = 0;
+    var captureActive = false;
+
+    function generateSessionId() {
+        return 'reg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    }
+
+    function startCaptureFlow() {
+        var name = document.getElementById('name').value.trim();
+        var userId = document.getElementById('user_id').value.trim();
+
+        if (!name || !userId) {
+            showCaptureStatus('Please fill in both Name and User ID.', 'error');
+            return;
+        }
+
+        document.getElementById('step-info').style.display = 'none';
+        document.getElementById('step-capture').style.display = 'block';
+        document.getElementById('step-result').style.display = 'none';
+
+        sessionId = generateSessionId();
+        capturedCount = 0;
+        captureActive = true;
+        updateProgress(0);
+        captureNextSample();
+    }
+
+    async function captureNextSample() {
+        if (!captureActive || capturedCount >= SAMPLES_NEEDED) return;
+
+        document.getElementById('capture-instruction').textContent =
+            'Capturing sample ' + (capturedCount + 1) + ' of ' + SAMPLES_NEEDED + '… Hold steady.';
+
+        try {
+            var response = await fetch('/api/capture_sample', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+
+            var result = await response.json();
+
+            if (result.success) {
+                capturedCount = result.sample_number;
+                updateProgress(capturedCount);
+                markSampleDot(capturedCount - 1, 'success');
+                showCaptureStatus('✓ Sample ' + capturedCount + ' captured', 'success');
+            } else {
+                showCaptureStatus(result.error || 'Capture failed — retrying…', 'error');
+                markSampleDot(capturedCount, 'retry');
+            }
+
+            if (capturedCount < SAMPLES_NEEDED && captureActive) {
+                setTimeout(captureNextSample, 1200);
+            } else if (capturedCount >= SAMPLES_NEEDED) {
+                showCaptureStatus('All samples captured. Registering…', 'success');
+                setTimeout(registerUser, 500);
+            }
+
+        } catch (err) {
+            showCaptureStatus('Network error — retrying…', 'error');
+            if (captureActive) setTimeout(captureNextSample, 2000);
+        }
+    }
+
+    async function registerUser() {
+        var name = document.getElementById('name').value.trim();
+        var userId = document.getElementById('user_id').value.trim();
+
+        try {
+            var response = await fetch('/api/register_user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, user_id: userId, session_id: sessionId })
+            });
+
+            var result = await response.json();
+
+            document.getElementById('step-capture').style.display = 'none';
+            document.getElementById('step-result').style.display = 'block';
+
+            var container = document.getElementById('result-container');
+
+            if (result.success) {
+                container.innerHTML =
+                    '<div class="result-success">' +
+                    '  <div class="result-icon">✓</div>' +
+                    '  <h3>Registration Successful</h3>' +
+                    '  <p>' + result.message + '</p>' +
+                    '</div>';
+            } else {
+                container.innerHTML =
+                    '<div class="result-error">' +
+                    '  <div class="result-icon">✕</div>' +
+                    '  <h3>Registration Failed</h3>' +
+                    '  <p>' + result.error + '</p>' +
+                    '</div>';
+            }
+
+        } catch (err) {
+            showCaptureStatus('Registration request failed.', 'error');
+        }
+    }
+
+    function cancelCapture() {
+        captureActive = false;
+        sessionId = '';
+        capturedCount = 0;
+        resetRegistration();
+    }
+
+    function resetRegistration() {
+        captureActive = false;
+        document.getElementById('step-info').style.display = 'block';
+        document.getElementById('step-capture').style.display = 'none';
+        document.getElementById('step-result').style.display = 'none';
+        document.getElementById('name').value = '';
+        document.getElementById('user_id').value = '';
+        document.getElementById('capture-status').textContent = '';
+        document.getElementById('capture-status').className = 'capture-status';
+
+        for (var i = 0; i < SAMPLES_NEEDED; i++) {
+            var dot = document.getElementById('sample-dot-' + i);
+            if (dot) dot.className = 'sample-dot';
+        }
+        updateProgress(0);
+    }
+
+    function updateProgress(count) {
+        var pct = Math.round((count / SAMPLES_NEEDED) * 100);
+        document.getElementById('capture-progress-bar').style.width = pct + '%';
+        document.getElementById('capture-current').textContent = count;
+    }
+
+    function markSampleDot(index, state) {
+        var dot = document.getElementById('sample-dot-' + index);
+        if (dot) dot.className = 'sample-dot sample-dot--' + state;
+    }
+
+    function showCaptureStatus(message, type) {
+        var el = document.getElementById('capture-status');
+        el.textContent = message;
+        el.className = 'capture-status capture-status--' + type;
+    }
+</script>
+{% endblock %}

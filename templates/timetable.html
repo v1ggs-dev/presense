@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Timetable — Smart Attendance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Timetable</h1>
+    <p class="page-desc">Schedule subjects for automatic attendance tracking</p>
+</div>
+
+<div class="timetable-layout">
+
+    <!-- Add Schedule Form -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Add Schedule</h3>
+        </div>
+        <div class="card-body">
+            <form action="{{ url_for('timetable_add') }}" method="POST">
+                <div class="form-group">
+                    <label class="form-label" for="subject">Subject</label>
+                    <input type="text" id="subject" name="subject" class="form-input"
+                           placeholder="e.g. Physics 101" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="day_of_week">Day</label>
+                    <select id="day_of_week" name="day_of_week" class="form-select" required>
+                        <option value="Monday">Monday</option>
+                        <option value="Tuesday">Tuesday</option>
+                        <option value="Wednesday">Wednesday</option>
+                        <option value="Thursday">Thursday</option>
+                        <option value="Friday">Friday</option>
+                        <option value="Saturday">Saturday</option>
+                        <option value="Sunday">Sunday</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="start_time">Start</label>
+                        <input type="time" id="start_time" name="start_time" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="end_time">End</label>
+                        <input type="time" id="end_time" name="end_time" class="form-input" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">Add to Schedule</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Weekly Schedule Display -->
+    <div>
+        {% set days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] %}
+
+        {% for day in days %}
+            {% set day_schedules = [] %}
+            {% for s in schedules %}
+                {% if s.day_of_week == day %}
+                    {% set _ = day_schedules.append(s) %}
+                {% endif %}
+            {% endfor %}
+
+            {% if day_schedules %}
+            <div class="day-group">
+                <div class="day-header">{{ day }}</div>
+                <div class="day-items">
+                    {% for s in day_schedules %}
+                    <div class="day-item">
+                        <div>
+                            <div class="day-item-subject">{{ s.subject }}</div>
+                            <div class="day-item-time">{{ s.start_time }} — {{ s.end_time }}</div>
+                        </div>
+                        <form action="{{ url_for('timetable_delete', id=s.id) }}" method="POST" style="margin:0;">
+                            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
+
+        {% if not schedules %}
+        <div class="card">
+            <div class="empty">
+                <div class="empty-icon">—</div>
+                <p>No classes scheduled yet.</p>
+                <p class="text-muted" style="font-size: 0.775rem;">
+                    Add a schedule to enable automatic session management.
+                </p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

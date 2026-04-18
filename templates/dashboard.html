@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Smart Attendance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p class="page-desc">Real-time attendance monitoring and session management</p>
+</div>
+
+<!-- Session Banner -->
+<div class="session-banner">
+    <div class="session-info">
+        <div class="session-indicator{% if active_class %} active{% endif %}" id="session-indicator"></div>
+        <div>
+            <h2 class="session-subject" id="class-status-heading">
+                {% if active_class %}{{ active_class.subject }}{% else %}No Active Class{% endif %}
+            </h2>
+            <p class="session-meta" id="sweep-counter-text">
+                {% if active_class %}0 sweeps completed{% else %}Start a session to begin attendance tracking.{% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="session-actions">
+        <button id="btn-start-class" class="btn btn-primary" onclick="startClass()"
+                style="{% if active_class %}display:none;{% endif %}">Start Session</button>
+        <button id="btn-force-sweep" class="btn btn-outline" onclick="forceSweep()"
+                style="{% if not active_class %}display:none;{% endif %}">Force Sweep</button>
+        <button id="btn-end-class" class="btn btn-danger" onclick="endClass()"
+                style="{% if not active_class %}display:none;{% endif %}">End Session</button>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="stats-row">
+    <div class="stat">
+        <span class="stat-value" id="stat-total-sweeps">0</span>
+        <span class="stat-label">Sweeps Run</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value" id="stat-students">{{ summary|length }}</span>
+        <span class="stat-label">Students</span>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="status-strip">
+    <div class="status-chip">
+        <span class="status-dot" id="status-camera-dot"></span>
+        <span id="status-camera-text">Camera: checking…</span>
+    </div>
+    <div class="status-chip">
+        <span class="status-dot" id="status-sweep-dot"></span>
+        <span id="status-sweep-text">Sweep: checking…</span>
+    </div>
+</div>
+
+<!-- Sweep Timer -->
+<div class="card" id="sweep-timer-card">
+    <div class="card-header">
+        <h3>Sweep Timer</h3>
+        <span class="sweep-timer-label" id="sweep-timer-status">Idle</span>
+    </div>
+    <div class="card-body" style="padding: 0.75rem 1.15rem;">
+        <div class="sweep-timer-track">
+            <div class="sweep-timer-fill" id="sweep-timer-bar"></div>
+        </div>
+        <div class="sweep-timer-info">
+            <span id="sweep-timer-text">Waiting for class session…</span>
+            <span class="sweep-timer-mono" id="sweep-timer-clock">--:--</span>
+        </div>
+    </div>
+</div>
+
+<!-- Live Feed -->
+<div class="card">
+    <div class="card-header">
+        <h3>Live Feed</h3>
+        <button class="btn btn-ghost btn-sm" id="toggle-feed" onclick="toggleFeed()">Show Feed</button>
+    </div>
+    <div class="feed-area" id="feed-container" style="display: none;">
+        <div class="sweep-banner" id="sweep-alert" style="display: none;">AI SWEEP IN PROGRESS</div>
+        <img id="live-feed" class="feed-img" alt="Live camera feed">
+        <div class="feed-overlay" id="feed-status">Feed paused</div>
+    </div>
+</div>
+
+<!-- Attendance Summary -->
+<div class="card">
+    <div class="card-header">
+        <h3>Attendance</h3>
+        <a id="btn-download-csv"
+           href="{% if active_class %}{{ url_for('download_csv', class_id=active_class.id) }}{% else %}#{% endif %}"
+           class="btn btn-ghost btn-sm"
+           style="{% if not active_class %}pointer-events:none;opacity:0.5;{% endif %}">
+            Export CSV
+        </a>
+    </div>
+
+    <table class="data-table" id="attendance-table" style="{% if not summary %}display:none;{% endif %}">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Sweeps</th>
+                <th>Attendance</th>
+            </tr>
+        </thead>
+        <tbody id="attendance-tbody">
+            {% if summary %}
+                {% for record in summary %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ record.name }}</strong></td>
+                    <td><code>{{ record.user_id }}</code></td>
+                    <td>{{ record.sweeps_attended }} / {{ record.total_sweeps }}</td>
+                    <td>
+                        <div class="progress-cell">
+                            <div class="progress-inline">
+                                <div class="progress-fill {% if record.percentage >= 80 %}high{% elif record.percentage >= 50 %}medium{% else %}low{% endif %}"
+                                     style="width: {{ record.percentage }}%"></div>
+                            </div>
+                            <span class="progress-text {% if record.percentage >= 80 %}high{% elif record.percentage >= 50 %}medium{% else %}low{% endif %}">
+                                {{ record.percentage }}%
+                            </span>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
+
+    <div class="empty" id="empty-state" style="{% if summary %}display:none;{% endif %}">
+        <p id="empty-state-msg">
+            {% if active_class %}Waiting for first sweep…{% else %}No active class session.{% endif %}
+        </p>
+    </div>
+</div>
+
+<!-- Evaluation Tools -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="text-muted" style="font-weight:500;">Evaluation Tools</h3>
+        <div class="flex-center gap-sm">
+            <span style="font-size:0.725rem;color:var(--text-muted);">
+                Fast-track: <strong id="demo-status-text">Off</strong>
+            </span>
+            <button id="btn-toggle-demo" class="btn btn-outline btn-sm" onclick="toggleDemoMode()">
+                Enable Fast-Track
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    /* Sweep Timer State */
+    var sweepTimer = {
+        sweepActive: false,
+        sweepStartTime: null,
+        lastSweepEndTime: null,
+        classActive: false,
+        demoMode: false,
+        duration: {{ sweep_duration }}
+    };
+
+    function formatTime(seconds) {
+        var s = Math.max(0, Math.floor(seconds));
+        var m = Math.floor(s / 60);
+        s = s % 60;
+        return (m > 0 ? m + ':' : '') + (m > 0 && s < 10 ? '0' : '') + s + 's';
+    }
+
+    function updateSweepTimerDisplay() {
+        var bar    = document.getElementById('sweep-timer-bar');
+        var text   = document.getElementById('sweep-timer-text');
+        var clock  = document.getElementById('sweep-timer-clock');
+        var status = document.getElementById('sweep-timer-status');
+        if (!bar || !text || !clock || !status) return;
+
+        var now = Date.now();
+
+        if (!sweepTimer.classActive) {
+            bar.style.width = '0%';
+            bar.className = 'sweep-timer-fill idle';
+            text.textContent = 'No active class session';
+            clock.textContent = '--:--';
+            status.textContent = 'Idle';
+            status.className = 'sweep-timer-label';
+            return;
+        }
+
+        if (sweepTimer.sweepActive) {
+            /* Sweep in progress — countdown */
+            var elapsed = (now - sweepTimer.sweepStartTime) / 1000;
+            var remaining = Math.max(0, sweepTimer.duration - elapsed);
+            var pct = (remaining / sweepTimer.duration) * 100;
+
+            bar.style.width = pct + '%';
+            bar.className = 'sweep-timer-fill active';
+            text.textContent = 'AI Sweep in progress';
+            clock.textContent = formatTime(remaining);
+            clock.className = 'sweep-timer-mono countdown';
+            status.textContent = 'SCANNING';
+            status.className = 'sweep-timer-label active';
+        } else {
+            /* Waiting between sweeps */
+            bar.style.width = '0%';
+            bar.className = 'sweep-timer-fill idle';
+            clock.className = 'sweep-timer-mono';
+
+            if (sweepTimer.lastSweepEndTime) {
+                var waited = Math.floor((now - sweepTimer.lastSweepEndTime) / 1000);
+                text.textContent = 'Waiting for next sweep';
+                clock.textContent = formatTime(waited);
+            } else {
+                text.textContent = 'Waiting for first sweep…';
+                clock.textContent = '0:00s';
+            }
+
+            if (sweepTimer.demoMode) {
+                status.textContent = 'FAST-TRACK';
+                status.className = 'sweep-timer-label fast-track';
+            } else {
+                status.textContent = 'Idle';
+                status.className = 'sweep-timer-label';
+            }
+        }
+    }
+
+    /* Hook into refreshStatus to track state transitions */
+    var _origRefreshStatus = refreshStatus;
+    refreshStatus = async function () {
+        await _origRefreshStatus();
+
+        /* Detect state from DOM that refreshStatus already updated */
+        var heading = document.getElementById('class-status-heading');
+        var sweepDot = document.getElementById('status-sweep-dot');
+        var demoText = document.getElementById('demo-status-text');
+
+        var classActive = heading && heading.textContent !== 'No Active Class';
+        var sweepInProgress = sweepDot && sweepDot.classList.contains('status-dot--danger');
+        var demoMode = demoText && demoText.textContent === 'ON';
+
+        sweepTimer.classActive = classActive;
+        sweepTimer.demoMode = demoMode;
+
+        if (sweepInProgress && !sweepTimer.sweepActive) {
+            sweepTimer.sweepActive = true;
+            sweepTimer.sweepStartTime = Date.now();
+        } else if (!sweepInProgress && sweepTimer.sweepActive) {
+            sweepTimer.sweepActive = false;
+            sweepTimer.lastSweepEndTime = Date.now();
+        }
+    };
+
+    /* Dashboard polling */
+    setInterval(refreshStatus, 2000);
+    refreshStatus();
+
+    /* Timer display update — every second for smooth countdown */
+    setInterval(updateSweepTimerDisplay, 1000);
+</script>
+{% endblock %}

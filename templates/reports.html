@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Reports — Smart Attendance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Reports</h1>
+    <p class="page-desc">Download attendance records for any past or active session</p>
+</div>
+
+<div class="card">
+    {% if classes %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Subject</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Sweeps</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cls in classes %}
+            <tr>
+                <td>{{ cls.id }}</td>
+                <td><strong>{{ cls.subject }}</strong></td>
+                <td><code>{{ cls.start_time[:10] if cls.start_time else '—' }}</code></td>
+                <td class="text-muted">
+                    {{ cls.start_time[11:16] if cls.start_time and cls.start_time|length > 11 else '—' }}
+                    {% if cls.end_time %}
+                        → {{ cls.end_time[11:16] if cls.end_time|length > 11 else cls.end_time }}
+                    {% else %}
+                        → ongoing
+                    {% endif %}
+                </td>
+                <td>
+                    {% if cls.status == 'active' %}
+                        <span class="text-success fw-600">Active</span>
+                    {% else %}
+                        <span class="text-muted">Completed</span>
+                    {% endif %}
+                </td>
+                <td>{{ cls.sweep_count }}</td>
+                <td style="text-align: right;">
+                    {% if cls.sweep_count > 0 %}
+                        <a href="{{ url_for('download_csv', class_id=cls.id) }}"
+                           class="btn btn-outline btn-sm">Download CSV</a>
+                    {% else %}
+                        <span class="text-muted" style="font-size: 0.725rem;">No data</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+        <div class="empty-icon">—</div>
+        <p>No class sessions recorded yet.</p>
+        <p class="text-muted" style="font-size: 0.775rem;">
+            Start a class from the Dashboard to begin collecting attendance data.
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

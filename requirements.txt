@@ -1,0 +1,17 @@
+# Smart Attendance System - Dependencies
+# ========================================
+
+# Core Computer Vision
+opencv-python>=4.9.0.80       # Video capture, frame processing, RTSP support
+face_recognition==1.3.0       # Face detection (HOG) + 128-d encoding
+dlib>=19.24.4                 # Backend for face_recognition (compiled C++)
+
+# Web Framework
+Flask==3.0.3                  # Lightweight web dashboard
+
+# Data & Utilities
+numpy>=1.26.4                 # Numerical operations for embeddings
+Pillow>=10.3.0                # Image manipulation
+setuptools<70.0.0             # Required for pkg_resources in face_recognition_models
+
+# Database (SQLite is built-in, no extra dependency needed)
