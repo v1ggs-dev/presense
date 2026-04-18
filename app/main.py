@@ -91,6 +91,16 @@ def automation_loop():
             for s in schedules:
                 if s['start_time'] <= current_time < s['end_time']:
                     expected_subject = s['subject']
+                    expected_sweeps = s['target_sweeps']
+                    
+                    # Calculate duration in seconds using datetime math
+                    try:
+                        fmt = "%H:%M"
+                        tdelta = datetime.strptime(s['end_time'], fmt) - datetime.strptime(s['start_time'], fmt)
+                        expected_duration = int(tdelta.total_seconds())
+                    except Exception:
+                        expected_duration = 3600
+                        
                     break
             
             active_class = get_active_class()
@@ -98,13 +108,13 @@ def automation_loop():
             if expected_subject:
                 # We should be in this class!
                 if not active_class:
-                    logger.info(f"Timetable trigger: Starting {expected_subject}")
-                    start_class(expected_subject)
+                    logger.info(f"Timetable trigger: Starting {expected_subject} with {expected_sweeps} sweeps")
+                    start_class(expected_subject, target_sweeps=expected_sweeps, duration_seconds=expected_duration)
                 elif active_class['subject'] != expected_subject and active_class['subject'] != "Manual Session":
                     # Transitioning back-to-back classes
                     end_class()
                     logger.info(f"Timetable trigger: Transitioning to {expected_subject}")
-                    start_class(expected_subject)
+                    start_class(expected_subject, target_sweeps=expected_sweeps, duration_seconds=expected_duration)
             else:
                 # No class scheduled right now
                 if active_class and active_class['subject'] != "Manual Session":
@@ -126,7 +136,16 @@ def automation_loop():
             sleep_duration = random.randint(5, 12)  # Fast 5-12 seconds
             logger.info(f"DEMO MODE: Next rapid sweep scheduled in ~{sleep_duration} seconds")
         else:
-            average_interval = 3600 / max(1, config.SWEEPS_PER_HOUR)
+            # Dynamic sweep math based on class custom settings
+            c_target = active_class.get('target_sweeps', 4)
+            c_duration = active_class.get('duration_seconds', 3600)
+            
+            # Avoid division by zero
+            safe_target = max(1, c_target)
+            
+            # Calculate exactly how often sweeps should happen on average
+            average_interval = c_duration / safe_target
+            
             min_sleep = max(10, int(average_interval * 0.5))
             max_sleep = int(average_interval * 1.5)
             sleep_duration = random.randint(min_sleep, max_sleep)
@@ -316,12 +335,20 @@ def timetable_add():
     start = request.form.get("start_time")
     end = request.form.get("end_time")
     
+    try:
+        sweeps = int(request.form.get("target_sweeps", 4))
+    except ValueError:
+        sweeps = 4
+        
+    if sweeps > 10:
+        sweeps = 10
+    
     if start >= end:
         flash("Start time must be before end time", "error")
         return redirect(url_for("timetable"))
         
-    add_schedule(day, subject, start, end)
-    flash(f"Scheduled {subject} on {day}.", "success")
+    add_schedule(day, subject, start, end, target_sweeps=sweeps)
+    flash(f"Scheduled {subject} on {day} with {sweeps} sweeps.", "success")
     return redirect(url_for("timetable"))
 
 @app.route("/timetable/delete/<int:id>", methods=["POST"])

@@ -36,12 +36,13 @@ def init_db():
 
     # Schema Migration for Timetable Additions
     try:
-        cursor.execute("SELECT subject FROM classes LIMIT 1")
+        cursor.execute("SELECT target_sweeps FROM timetable LIMIT 1")
     except sqlite3.OperationalError:
-        logger.warning("Upgrading DB schema for Timetable Automation. Wiping old sessions...")
+        logger.warning("Upgrading DB schema for Per-Class Sweeps...")
         cursor.execute("DROP TABLE IF EXISTS attendance")
         cursor.execute("DROP TABLE IF EXISTS sweeps")
         cursor.execute("DROP TABLE IF EXISTS classes")
+        cursor.execute("DROP TABLE IF EXISTS timetable")
 
     # Timetable Schema
     cursor.execute("""
@@ -50,7 +51,8 @@ def init_db():
             day_of_week TEXT NOT NULL,
             subject     TEXT NOT NULL,
             start_time  TEXT NOT NULL,
-            end_time    TEXT NOT NULL
+            end_time    TEXT NOT NULL,
+            target_sweeps INTEGER NOT NULL
         )
     """)
 
@@ -61,7 +63,9 @@ def init_db():
             subject     TEXT NOT NULL,
             start_time  TEXT NOT NULL,
             end_time    TEXT,
-            status      TEXT NOT NULL DEFAULT 'active'
+            status      TEXT NOT NULL DEFAULT 'active',
+            target_sweeps INTEGER NOT NULL,
+            duration_seconds INTEGER NOT NULL
         )
     """)
 
@@ -97,11 +101,11 @@ def init_db():
 # Timetable Operations
 # ---------------------------------------------------------------------------
 
-def add_schedule(day_of_week, subject, start_time, end_time):
+def add_schedule(day_of_week, subject, start_time, end_time, target_sweeps):
     conn = get_connection()
     conn.execute(
-        "INSERT INTO timetable (day_of_week, subject, start_time, end_time) VALUES (?, ?, ?, ?)",
-        (day_of_week, subject, start_time, end_time)
+        "INSERT INTO timetable (day_of_week, subject, start_time, end_time, target_sweeps) VALUES (?, ?, ?, ?, ?)",
+        (day_of_week, subject, start_time, end_time, target_sweeps)
     )
     conn.commit()
     conn.close()
@@ -167,19 +171,19 @@ def delete_user(user_id):
 # Class Session Operations
 # ---------------------------------------------------------------------------
 
-def start_class(subject="Manual Session"):
+def start_class(subject="Manual Session", target_sweeps=4, duration_seconds=3600):
     conn = get_connection()
     conn.execute("UPDATE classes SET status = 'completed', end_time = ? WHERE status = 'active'", 
                  (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),))
     
     cursor = conn.execute(
-        "INSERT INTO classes (subject, start_time, status) VALUES (?, ?, 'active')",
-        (subject, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        "INSERT INTO classes (subject, start_time, status, target_sweeps, duration_seconds) VALUES (?, ?, 'active', ?, ?)",
+        (subject, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), target_sweeps, duration_seconds)
     )
     class_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    logger.info(f"Started new class: {subject} (ID: {class_id})")
+    logger.info(f"Started new class: {subject} (ID: {class_id}) | Target Sweeps: {target_sweeps}")
     return class_id
 
 def end_class():

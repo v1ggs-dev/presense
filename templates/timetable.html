@@ -46,6 +46,11 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label class="form-label" for="target_sweeps">Target Sweeps (Max: 10)</label>
+                    <input type="number" id="target_sweeps" name="target_sweeps" class="form-input" min="1" max="10" value="4" required>
+                </div>
+
                 <button type="submit" class="btn btn-primary btn-block">Add to Schedule</button>
             </form>
         </div>
@@ -71,7 +76,7 @@
                     <div class="day-item">
                         <div>
                             <div class="day-item-subject">{{ s.subject }}</div>
-                            <div class="day-item-time">{{ s.start_time }} — {{ s.end_time }}</div>
+                            <div class="day-item-time">{{ s.start_time }} — {{ s.end_time }} | Sweeps: {{ s.target_sweeps }}</div>
                         </div>
                         <form action="{{ url_for('timetable_delete', id=s.id) }}" method="POST" style="margin:0;">
                             <button type="submit" class="btn btn-danger btn-sm">Remove</button>
